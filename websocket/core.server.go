@@ -1,0 +1,47 @@
+package mtcws
+
+import (
+	"context"
+	"errors"
+	"log"
+	"net/http"
+
+	"github.com/google/uuid"
+)
+
+func (wsconn *WsCoreCtx) WebsocketServer(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
+	store, ok := ctx.Value("mtc-store").(map[string]string)
+	var nodeID, connType string
+	if !ok && !wsconn.Anonymous {
+		return errors.New("invalid store")
+	} else if ok && !wsconn.Anonymous {
+		nodeID = store["node_id"]
+		connType = store["conn_type"]
+	} else {
+		nodeID = uuid.NewString()
+		connType = "anonymous"
+	}
+
+	if nodeID == "" || connType == "" {
+		return errors.New("invalid node-id or conn-type")
+	}
+
+	if err := wsconn.Ctx.Err(); err != nil {
+		return err
+	}
+
+	c, err := wsconn.WsUpgrader.Upgrade(w, r, nil)
+	if err != nil {
+		//log.Print("upgrade:", err)
+		if c != nil {
+			c.Close()
+		}
+
+		return err
+	}
+	//defer c.Close()
+	log.Println(c.RemoteAddr().String(), "connected")
+
+	wsconn.InitConn(ctx, c, nodeID, connType, c.Subprotocol())
+	return nil
+}
