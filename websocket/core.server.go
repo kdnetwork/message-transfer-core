@@ -3,7 +3,7 @@ package mtcws
 import (
 	"context"
 	"errors"
-	"log"
+	"log/slog"
 	"net/http"
 
 	"github.com/google/uuid"
@@ -32,7 +32,7 @@ func (wsconn *WsCoreCtx) WebsocketServer(ctx context.Context, w http.ResponseWri
 
 	c, err := wsconn.WsUpgrader.Upgrade(w, r, nil)
 	if err != nil {
-		//log.Print("upgrade:", err)
+		// slog.Error("upgrade:", err)
 		if c != nil {
 			c.Close()
 		}
@@ -40,7 +40,7 @@ func (wsconn *WsCoreCtx) WebsocketServer(ctx context.Context, w http.ResponseWri
 		return err
 	}
 	//defer c.Close()
-	log.Println(c.RemoteAddr().String(), "connected")
+	slog.Debug("mtcws", c.RemoteAddr().String(), "connected")
 
 	wsconn.InitConn(ctx, c, nodeID, connType, c.Subprotocol())
 	return nil

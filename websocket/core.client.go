@@ -2,11 +2,10 @@ package mtcws
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/lesismal/nbio/nbhttp"
@@ -42,7 +41,7 @@ func (wsconn *WsCoreCtxClient) WebsocketClient(ctx context.Context, _url string,
 	dialer := websocket.Dialer{
 		Engine:      wsconn.Engine,
 		Upgrader:    wsconn.WsUpgrader,
-		DialTimeout: time.Second * 10,
+		DialTimeout: wsconn.ConnectTimeout,
 	}
 
 	store, ok := ctx.Value("mtc-store").(map[string]string)
@@ -60,7 +59,7 @@ func (wsconn *WsCoreCtxClient) WebsocketClient(ctx context.Context, _url string,
 	}
 
 	//defer c.Close()
-	log.Println(c.RemoteAddr().String(), "connected")
+	slog.Debug("mtcws", c.RemoteAddr().String(), "connected")
 
 	return wsconn.InitConn(ctx, c, authorization, "client", protocol), nil
 }

@@ -2,11 +2,27 @@ package mtcws
 
 import (
 	"context"
-	"log"
+	"log/slog"
+	"sync"
 
 	"github.com/jellydator/ttlcache/v3"
 	"github.com/lesismal/nbio/nbhttp/websocket"
 )
+
+type WsConnContext struct {
+	Conn     *websocket.Conn
+	Addr     string
+	ID       string
+	ConnType string
+	Protocol string
+	Store    map[string]string
+
+	Ext *WsCoreCtx
+
+	Ctx         context.Context
+	Cancel      context.CancelFunc
+	CloseAction sync.Once
+}
 
 func (corectx *WsCoreCtx) InitConn(_ctx context.Context, c *websocket.Conn, nodeID, connType string, protocol string) *WsConnContext {
 	ctx, cancel := context.WithCancel(_ctx)
@@ -49,9 +65,12 @@ func (wsconn *WsConnContext) Close() {
 	wsconn.CloseAction.Do(func() {
 		connID := wsconn.ConnType + ":" + wsconn.ID
 
-		log.Println(connID, wsconn.Conn.RemoteAddr().String(), "close")
+		defer slog.Info("mtcws", "id", connID, "ip", wsconn.Conn.RemoteAddr().String(), "status", "closed")
 
-		wsconn.Ext.OnDisConnected(wsconn)
+		if wsconn.Ext.OnDisConnected != nil {
+			wsconn.Ext.OnDisConnected(wsconn)
+		}
+
 		wsconn.Conn.Close()
 	})
 }

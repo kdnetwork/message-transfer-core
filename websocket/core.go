@@ -2,39 +2,24 @@ package mtcws
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"net/http"
 	"slices"
-	"sync"
 	"time"
 
 	"github.com/jellydator/ttlcache/v3"
 	"github.com/lesismal/nbio/nbhttp/websocket"
 )
 
-type WsConnContext struct {
-	Conn     *websocket.Conn
-	Addr     string
-	ID       string
-	ConnType string
-	Protocol string
-	Store    map[string]string
-
-	Ext *WsCoreCtx
-
-	Ctx         context.Context
-	Cancel      context.CancelFunc
-	CloseAction sync.Once
-}
-
 type WsCoreCtx struct {
 	// variables
-	Anonymous   bool // server only
-	Ctx         context.Context
-	Cancel      context.CancelFunc
-	TTL         time.Duration
-	ConnPoolTTL time.Duration
-	ConnSize    uint64
+	Anonymous      bool // server only
+	Ctx            context.Context
+	Cancel         context.CancelFunc
+	TTL            time.Duration
+	ConnPoolTTL    time.Duration
+	ConnectTimeout time.Duration
+	ConnSize       uint64
 
 	// nbio
 	WsUpgrader        *websocket.Upgrader
@@ -47,10 +32,15 @@ type WsCoreCtx struct {
 }
 
 func (corectx *WsCoreCtx) Init() {
+	InitNbioLogger()
 	corectx.Ctx, corectx.Cancel = context.WithCancel(context.Background())
 
 	if corectx.TTL == 0 {
 		corectx.TTL = time.Hour * 24
+	}
+
+	if corectx.ConnectTimeout == 0 {
+		corectx.ConnectTimeout = time.Second * 10
 	}
 
 	corectx.WebsocketConnPool = ttlcache.New(
@@ -83,8 +73,8 @@ func (corectx *WsCoreCtx) Stop() error {
 
 func (corectx *WsCoreCtx) InitUpgrader() {
 	corectx.WsUpgrader = websocket.NewUpgrader()
-	corectx.WsUpgrader.KeepaliveTime = corectx.TTL + time.Second*10 // have time to send the last message
-	corectx.WsUpgrader.HandshakeTimeout = corectx.TTL + time.Second*10
+	corectx.WsUpgrader.KeepaliveTime = corectx.TTL + corectx.ConnectTimeout // have time to send the last message
+	corectx.WsUpgrader.HandshakeTimeout = corectx.TTL + corectx.ConnectTimeout
 	corectx.WsUpgrader.CheckOrigin = func(r *http.Request) bool {
 		return true
 	}
@@ -121,10 +111,10 @@ func (corectx *WsCoreCtx) InitUpgrader() {
 		response, err := corectx.OnMessage(wsConnContext, message)
 
 		if err != nil {
-			log.Println(err)
+			slog.Error("mtcws", "error", err)
 		}
 		if len(response) > 0 {
-			// log.Println(response)
+			// slog.Debug(response)
 			if wsConnContext.Protocol == "json" {
 				c.WriteMessage(websocket.TextMessage, response)
 			} else {
@@ -134,7 +124,7 @@ func (corectx *WsCoreCtx) InitUpgrader() {
 	})
 	corectx.WsUpgrader.OnClose(func(c *websocket.Conn, err error) {
 		if err != nil {
-			log.Println(err)
+			slog.Error("mtcws", "error", err)
 		}
 		wsConnContext, ok := c.SessionWithLock().(*WsConnContext)
 		if !ok || wsConnContext == nil {
