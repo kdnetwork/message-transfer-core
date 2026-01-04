@@ -2,37 +2,29 @@ package mocarpc
 
 import "errors"
 
-type MocaRPCMethod func(in *MocaJsonRPCBase) (*MocaJsonRPCBase, error)
+type MocaRPCMethod func(in *MocaJsonRPCBase) (*MocaJsonRPCBase, int, error)
 
-func (ctx *MocaJsonRPCCtx) MocaRPCMethodFunc(in *MocaJsonRPCBase) (*MocaJsonRPCBase, error) {
-	if handler, exists := ctx.Methods[in.Method]; exists {
-		res, err := handler(in)
+func (corectx *MocaJsonRPCCtx) MocaRPCMethodFunc(in *MocaJsonRPCBase) (*MocaJsonRPCBase, int, error) {
+	if handler, exists := corectx.Methods[in.Method]; exists {
+		res, errorCode, err := handler(in)
 
 		if err != nil {
 			// TODO params parse error
-			return &MocaJsonRPCBase{
-				// JsonRPC: "2.0",
-				ID: in.ID,
-				Error: &MocaJsonRPCError{
-					Code:    InternalError,
-					Message: "failed", // TODO more information...
-				},
-			}, err
+			return corectx.RsponseBuilder(in.ID, &MocaJsonRPCError{
+				Code:    InternalError,
+				Message: ErrorsMap[InternalError], // TODO more information...
+			}), errorCode, err
 		}
 
-		return res, nil
+		return res, 0, nil
 	}
 
-	return &MocaJsonRPCBase{
-		// JsonRPC: "2.0",
-		ID: in.ID,
-		Error: &MocaJsonRPCError{
-			Code:    -32601,
-			Message: "method not found",
-		},
-	}, errors.New("no method")
+	return corectx.RsponseBuilder(in.ID, &MocaJsonRPCError{
+		Code:    MethodNotFound,
+		Message: ErrorsMap[MethodNotFound], // TODO more information...
+	}), MethodNotFound, errors.New("no method")
 }
 
-func (ctx *MocaJsonRPCCtx) RegisterMethod(method string, handler MocaRPCMethod) {
-	ctx.Methods[method] = handler
+func (corectx *MocaJsonRPCCtx) RegisterMethod(method string, handler MocaRPCMethod) {
+	corectx.Methods[method] = handler
 }

@@ -1,13 +1,13 @@
 package mocarpc
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"log/slog"
-	"slices"
+	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jellydator/ttlcache/v3"
 )
 
@@ -16,11 +16,30 @@ type MocaJsonRPCCtx struct {
 
 	SyncMap *ttlcache.Cache[string, *SyncMocaRPCType]
 
-	ReadMessageChan chan []byte
-	WriteMessage    func([]byte) error
+	ReadMessageChan chan *ReadMessageChanStruct
+	WriteMessage    func(string, int, []byte) error
 
 	GlobalContext       context.Context
 	GlobalContextCancel context.CancelFunc
+
+	// settings
+	// IgnoreInvalidRequest bool
+	UseJsonRPC2 bool
+}
+
+type ReadMessageChanStruct struct {
+	ID      string
+	Message []byte
+}
+
+func (corectx *MocaJsonRPCCtx) ReadMessage(message []byte) string {
+	id := uuid.NewString()
+	corectx.ReadMessageChan <- &ReadMessageChanStruct{
+		Message: message,
+		ID:      id,
+	}
+
+	return id
 }
 
 // TODO ttl
@@ -32,7 +51,7 @@ func InitMocaJsonRPCCtx(ctx context.Context) *MocaJsonRPCCtx {
 			ttlcache.WithDisableTouchOnHit[string, *SyncMocaRPCType](),
 			ttlcache.WithTTL[string, *SyncMocaRPCType](time.Second*11),
 		),
-		ReadMessageChan: make(chan []byte, 2000),
+		ReadMessageChan: make(chan *ReadMessageChanStruct, 2000),
 
 		GlobalContext:       ctx,
 		GlobalContextCancel: cancel,
@@ -51,63 +70,97 @@ func InitMocaJsonRPCCtx(ctx context.Context) *MocaJsonRPCCtx {
 }
 
 func (corectx *MocaJsonRPCCtx) OnMessage() {
-	for message := range corectx.ReadMessageChan {
-		message = bytes.TrimSpace(message)
+	for messageStruct := range corectx.ReadMessageChan {
+		message := strings.TrimSpace(string(messageStruct.Message))
 		// parse
-		/// TODO check last code
-		if len(message) == 0 || !slices.Contains([]string{"{", "["}, string(message[0])) {
-			res, _ := json.Marshal(&MocaJsonRPCBase{
-				// JsonRPC: "2.0",
-				ID: json.RawMessage("null"),
-				Error: &MocaJsonRPCError{
-					Code:    -32601,
-					Message: "method not found",
-				},
-			})
-			slog.Error("mocarpc", "error:", string(res))
+		if len(message) <= 2 || !strings.HasPrefix(message, "{") || !strings.HasPrefix(message, "[") {
+			slog.Debug("mocarpc", "id", messageStruct.ID, "original_message", message)
+
+			res := corectx.NullIDErrorBuilder(messageStruct.ID, ParseError)
 			if corectx.WriteMessage != nil {
-				if err := corectx.WriteMessage(res); err != nil {
+				if err := corectx.WriteMessage(messageStruct.ID, ParseError, res); err != nil {
 					slog.Error("mocarpc", "write error:", err)
 				}
 			}
 		}
 
-		firstCode := string(message[0])
-		isBatch := firstCode == "["
+		// TODO prevent loop reading
+		if IsJSONArrayFast(message) {
+			parsedData := corectx.ParseBatch(messageStruct.Message)
+			if len(parsedData) == 1 && parsedData[0].ErrorCode != 0 {
+				slog.Debug("mocarpc", "id", messageStruct.ID, "original_message", message, "parsed_message", parsedData)
 
-		// batch mode not yet support nil response
-		if isBatch {
-			parsedData := corectx.ParseBatch(message)
-			if len(parsedData) <= 1 && parsedData[0].Error != nil {
-				slog.Error("mocarpc", "error:", parsedData[0].Error)
-				return
-			}
-
-			go func() {
-				res := make([]*MocaJsonRPCBase, len(parsedData))
-
-				for i, reqStruct := range parsedData {
-					r, err := corectx.Methods[reqStruct.Message.Method](reqStruct.Message.MocaJsonRPCBase)
-
-					if err != nil {
-						slog.Error("mocarpc", "err:", err)
-					}
-
-					res[i] = r
-				}
-				responseBytes, err := json.Marshal(res)
-				if err != nil {
-					slog.Error("mocarpc", "marshal error:", err)
-					return
-				}
+				res := corectx.NullIDErrorBuilder(messageStruct.ID, ParseError)
 				if corectx.WriteMessage != nil {
-					if err := corectx.WriteMessage(responseBytes); err != nil {
+					if err := corectx.WriteMessage(messageStruct.ID, ParseError, res); err != nil {
 						slog.Error("mocarpc", "write error:", err)
 					}
 				}
-			}()
+				continue
+			} else if len(parsedData) == 0 {
+				slog.Debug("mocarpc", "id", messageStruct.ID, "original_message", message, "parsed_message", parsedData)
+
+				res := corectx.NullIDErrorBuilder(messageStruct.ID, InvalidRequest)
+				if corectx.WriteMessage != nil {
+					if err := corectx.WriteMessage(messageStruct.ID, InvalidRequest, res); err != nil {
+						slog.Error("mocarpc", "write error:", err)
+					}
+				}
+				continue
+			}
+
+			if parsedData[0].RequestType == MocaRPCMessageTypeRequest {
+				go func() {
+					res := []*MocaJsonRPCBase{}
+
+					for _, reqStruct := range parsedData {
+						if reqStruct.ErrorCode != 0 {
+							slog.Error("mocarpc", "error:", reqStruct.Error)
+							res = append(res, corectx.RsponseBuilder(reqStruct.Message.ID, &MocaJsonRPCError{
+								Code:    reqStruct.ErrorCode,
+								Message: reqStruct.Error.Error(),
+							}))
+							continue
+						} else {
+							r, _, err := corectx.MocaRPCMethodFunc(reqStruct.Message.MocaJsonRPCBase)
+
+							if err != nil {
+								slog.Error("mocarpc", "err:", err)
+							}
+
+							if r == nil {
+								r = corectx.RsponseBuilder(reqStruct.Message.ID, &MocaJsonRPCError{
+									Code:    InvalidRequest,
+									Message: ErrorsMap[InvalidRequest],
+								})
+							}
+
+							res = append(res, r)
+						}
+					}
+					responseBytes, err := json.Marshal(res)
+					if err != nil {
+						slog.Error("mocarpc", "marshal error:", err)
+						return
+					}
+					if corectx.WriteMessage != nil {
+						if err := corectx.WriteMessage(messageStruct.ID, 0, responseBytes); err != nil {
+							slog.Error("mocarpc", "write error:", err)
+						}
+					}
+				}()
+			} else {
+				if syncCall := corectx.SyncMap.Get(string(parsedData[0].Message.ID)); syncCall != nil {
+					batchRes := []*MocaJsonRPCResponse{}
+					for _, pd := range parsedData {
+						batchRes = append(batchRes, pd.Message)
+					}
+
+					syncCall.Value().CallbackBatchChan <- batchRes
+				}
+			}
 		} else {
-			parsedData := corectx.Parse(message)
+			parsedData := corectx.Parse(messageStruct.Message)
 
 			if parsedData.RequestType == MocaRPCMessageTypeRequest {
 				if parsedData.Error != nil {
@@ -116,7 +169,7 @@ func (corectx *MocaJsonRPCCtx) OnMessage() {
 				}
 
 				go func() {
-					r, err := corectx.Methods[parsedData.Message.Method](parsedData.Message.MocaJsonRPCBase)
+					r, code, err := corectx.MocaRPCMethodFunc(parsedData.Message.MocaJsonRPCBase)
 
 					if err != nil {
 						slog.Error("mocarpc", "err:", err)
@@ -133,7 +186,7 @@ func (corectx *MocaJsonRPCCtx) OnMessage() {
 						return
 					}
 					if corectx.WriteMessage != nil {
-						if err := corectx.WriteMessage(responseBytes); err != nil {
+						if err := corectx.WriteMessage(messageStruct.ID, code, responseBytes); err != nil {
 							slog.Error("mocarpc", "write error:", err)
 						}
 					}
