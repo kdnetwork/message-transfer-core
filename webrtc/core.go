@@ -105,7 +105,7 @@ func (corectx *RTCCoreCtx) InitEvents(connCtx *RTCConnContext) error {
 	})
 
 	connCtx.Peer.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
-		slog.Debug("mtcrtc", "state", state, "addr", connCtx.Addr)
+		slog.Debug("mtcrtc", "state", state, "id", connCtx.ID, "type", connCtx.ConnType)
 		switch state {
 		case webrtc.PeerConnectionStateConnected:
 			if corectx.OnConnected != nil {

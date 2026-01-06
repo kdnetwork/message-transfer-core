@@ -15,12 +15,12 @@ type RTCConnContext struct {
 	Peer        *webrtc.PeerConnection
 	MainChannel *webrtc.DataChannel
 	ChannelMap  map[string]*webrtc.DataChannel
-	Addr        string
-	ID          string
-	ConnType    string
-	Store       map[string]string
-	SignalPool  []*RTCSignal
-	Protocol    string
+	// Addr        string
+	ID         string
+	ConnType   string
+	Store      map[string]string
+	SignalPool []*RTCSignal
+	Protocol   string
 
 	Ext *RTCCoreCtx
 
