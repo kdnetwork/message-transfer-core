@@ -39,9 +39,9 @@ func (corectx *WsCoreCtx) Init() {
 		corectx.TTL = time.Hour * 24
 	}
 
-	if corectx.ConnectTimeout == 0 {
-		corectx.ConnectTimeout = time.Second * 10
-	}
+	// if corectx.ConnectTimeout == 0 {
+	// 	corectx.ConnectTimeout = time.Second * 10
+	// }
 
 	corectx.WebsocketConnPool = ttlcache.New(
 		ttlcache.WithCapacity[string, *WsConnContext](corectx.ConnSize), // ?
@@ -71,13 +71,15 @@ func (corectx *WsCoreCtx) Stop() error {
 	return nil
 }
 
+func AllowAllOrigin(r *http.Request) bool {
+	return true
+}
+
 func (corectx *WsCoreCtx) InitUpgrader() {
 	corectx.WsUpgrader = websocket.NewUpgrader()
 	corectx.WsUpgrader.KeepaliveTime = corectx.TTL + corectx.ConnectTimeout // have time to send the last message
 	corectx.WsUpgrader.HandshakeTimeout = corectx.TTL + corectx.ConnectTimeout
-	corectx.WsUpgrader.CheckOrigin = func(r *http.Request) bool {
-		return true
-	}
+	corectx.WsUpgrader.CheckOrigin = AllowAllOrigin
 	corectx.WsUpgrader.Subprotocols = Protocols
 	// corectx.WsUpgrader.BlockingModHandleRead = false
 	// corectx.WsUpgrader.BlockingModAsyncWrite = true

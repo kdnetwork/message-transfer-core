@@ -11,7 +11,6 @@ import (
 
 type WsConnContext struct {
 	Conn     *websocket.Conn
-	Addr     string
 	ID       string
 	ConnType string
 	Protocol string
@@ -36,7 +35,6 @@ func (corectx *WsCoreCtx) InitConn(_ctx context.Context, c *websocket.Conn, node
 
 	connCtx := &WsConnContext{
 		Conn:     c,
-		Addr:     c.RemoteAddr().String(),
 		ID:       nodeID,
 		ConnType: connType,
 		Ext:      corectx,
