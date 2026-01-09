@@ -17,7 +17,6 @@ type WsCoreCtx struct {
 	Ctx            context.Context
 	Cancel         context.CancelFunc
 	TTL            time.Duration
-	ConnPoolTTL    time.Duration
 	ConnectTimeout time.Duration
 	ConnSize       uint64
 
