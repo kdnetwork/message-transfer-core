@@ -83,17 +83,7 @@ func (corectx *WsCoreCtx) InitUpgrader() {
 	// corectx.WsUpgrader.BlockingModHandleRead = false
 	// corectx.WsUpgrader.BlockingModAsyncWrite = true
 
-	corectx.WsUpgrader.OnOpen(func(c *websocket.Conn) {
-		if corectx.OnConnected == nil {
-			return
-		}
-		wsConnContext, ok := c.SessionWithLock().(*WsConnContext)
-		if !ok || wsConnContext == nil {
-			return
-		}
-
-		corectx.OnConnected(wsConnContext)
-	})
+	// corectx.WsUpgrader.OnOpen(func(c *websocket.Conn) {})
 	corectx.WsUpgrader.OnMessage(func(c *websocket.Conn, messageType websocket.MessageType, message []byte) {
 		if corectx.OnMessage == nil {
 			return

@@ -45,6 +45,10 @@ func (corectx *WsCoreCtx) InitConn(_ctx context.Context, c *websocket.Conn, node
 	}
 	go connCtx.Close()
 
+	if corectx.OnConnected != nil {
+		go corectx.OnConnected(connCtx)
+	}
+
 	c.SetSession(connCtx)
 
 	connKey := connCtx.ConnType + ":" + connCtx.ID
