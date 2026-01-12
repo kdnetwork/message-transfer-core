@@ -2,19 +2,22 @@ package mtcws
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"sync"
+	"time"
 
 	"github.com/jellydator/ttlcache/v3"
 	"github.com/lesismal/nbio/nbhttp/websocket"
 )
 
 type WsConnContext struct {
-	Conn     *websocket.Conn
-	ID       string
-	ConnType string
-	Protocol string
-	Store    map[string]string
+	Conn        *websocket.Conn
+	ID          string
+	ConnType    string
+	Protocol    string
+	Store       map[string]string
+	ConnectedAt time.Time
 
 	Ext *WsCoreCtx
 
@@ -23,43 +26,46 @@ type WsConnContext struct {
 	CloseAction sync.Once
 }
 
-func (corectx *WsCoreCtx) InitConn(_ctx context.Context, c *websocket.Conn, nodeID, connType string, protocol string) *WsConnContext {
-	ctx, cancel := context.WithCancel(_ctx)
-
-	var store map[string]string
-	var ok bool
-
-	if store, ok = ctx.Value("mtc-store").(map[string]string); !ok {
-		store = make(map[string]string)
-	}
-
+func (corectx *WsCoreCtx) InitConnCtx(_ctx context.Context, c *websocket.Conn, nodeID, connType string, protocol string, store map[string]string) (*WsConnContext, error) {
+	ctx, cancel := context.WithTimeout(_ctx, corectx.TTL)
+	connKey := connType + ":" + nodeID
 	connCtx := &WsConnContext{
-		Conn:     c,
-		ID:       nodeID,
-		ConnType: connType,
-		Ext:      corectx,
-		Ctx:      ctx,
-		Cancel:   cancel,
-		Protocol: AutoResponseProtocol(protocol),
-		Store:    store,
-	}
-	go connCtx.Close()
-
-	if corectx.OnConnected != nil {
-		go corectx.OnConnected(connCtx)
+		Conn:        c,
+		ID:          nodeID,
+		ConnType:    connType,
+		Ext:         corectx,
+		Ctx:         ctx,
+		Cancel:      cancel,
+		Protocol:    AutoResponseProtocol(protocol),
+		Store:       store,
+		ConnectedAt: time.Now(),
 	}
 
 	c.SetSession(connCtx)
 
-	connKey := connCtx.ConnType + ":" + connCtx.ID
+	_, err, shared := corectx.ConnSf.Do(connKey, func() (any, error) {
+		if item := corectx.WebsocketConnPool.Get(connKey); item != nil {
+			if existsConn := item.Value(); existsConn != nil && existsConn.Conn != nil {
+				existsConn.Store["disconnect_reason"] = "kick"
+				existsConn.Cancel()
+			}
+		}
+		corectx.WebsocketConnPool.Set(connKey, connCtx, ttlcache.DefaultTTL)
+		go connCtx.Close()
 
-	// disconnect
-	corectx.WebsocketConnPool.Delete(connKey)
-	corectx.WebsocketConnPool.Set(connKey, connCtx, ttlcache.DefaultTTL)
+		slog.Debug("mtcws", c.RemoteAddr().String(), "connected")
+		return nil, corectx.OnConnected(connCtx)
+	})
 
-	//go connCtx.Conn.HandleRead(4096)
+	if err != nil {
+		connCtx.Cancel()
+		return nil, err
+	} else if shared {
+		connCtx.Cancel()
+		return nil, errors.New("duplicate connection")
+	}
 
-	return connCtx
+	return connCtx, nil
 }
 
 func (wsconn *WsConnContext) Close() {

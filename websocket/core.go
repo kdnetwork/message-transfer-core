@@ -9,6 +9,7 @@ import (
 
 	"github.com/jellydator/ttlcache/v3"
 	"github.com/lesismal/nbio/nbhttp/websocket"
+	"golang.org/x/sync/singleflight"
 )
 
 type WsCoreCtx struct {
@@ -28,6 +29,8 @@ type WsCoreCtx struct {
 	OnConnected    func(*WsConnContext) error
 	OnDisConnected func(*WsConnContext) error
 	OnMessage      func(*WsConnContext, []byte) ([]byte, error)
+
+	ConnSf singleflight.Group
 }
 
 func (corectx *WsCoreCtx) Init() {
@@ -52,8 +55,7 @@ func (corectx *WsCoreCtx) Init() {
 	corectx.WebsocketConnPool.OnEviction(func(ctx context.Context, reason ttlcache.EvictionReason, i *ttlcache.Item[string, *WsConnContext]) {
 		if connCtx := i.Value(); connCtx.Conn != nil {
 			defer connCtx.Cancel()
-
-			if i.IsExpired() {
+			if reason == ttlcache.EvictionReasonExpired {
 				connCtx.Store["disconnect_reason"] = "expired"
 			} else {
 				connCtx.Store["disconnect_reason"] = "kick"
@@ -83,7 +85,6 @@ func (corectx *WsCoreCtx) InitUpgrader() {
 	// corectx.WsUpgrader.BlockingModHandleRead = false
 	// corectx.WsUpgrader.BlockingModAsyncWrite = true
 
-	// corectx.WsUpgrader.OnOpen(func(c *websocket.Conn) {})
 	corectx.WsUpgrader.OnMessage(func(c *websocket.Conn, messageType websocket.MessageType, message []byte) {
 		if corectx.OnMessage == nil {
 			return

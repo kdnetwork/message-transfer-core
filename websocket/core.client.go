@@ -2,7 +2,6 @@ package mtcws
 
 import (
 	"context"
-	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -55,11 +54,11 @@ func (wsconn *WsCoreCtxClient) WebsocketClient(ctx context.Context, _url string,
 
 	c, _, err := dialer.Dial(_url, headers)
 	if err != nil {
+		if c != nil {
+			return nil, c.Close()
+		}
 		return nil, err
 	}
 
-	//defer c.Close()
-	slog.Debug("mtcws", c.RemoteAddr().String(), "connected")
-
-	return wsconn.InitConn(ctx, c, authorization, "client", protocol), nil
+	return wsconn.InitConnCtx(ctx, c, authorization, "client", protocol, store)
 }

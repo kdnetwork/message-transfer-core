@@ -8,6 +8,7 @@ require (
 	github.com/lesismal/nbio v1.6.8
 	github.com/pion/logging v0.2.4
 	github.com/pion/webrtc/v4 v4.2.1
+	golang.org/x/sync v0.19.0
 )
 
 require (
@@ -29,6 +30,5 @@ require (
 	github.com/wlynxg/anet v0.0.5 // indirect
 	golang.org/x/crypto v0.46.0 // indirect
 	golang.org/x/net v0.48.0 // indirect
-	golang.org/x/sync v0.19.0 // indirect
 	golang.org/x/sys v0.39.0 // indirect
 )
