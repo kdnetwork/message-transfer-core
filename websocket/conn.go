@@ -7,11 +7,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jellydator/ttlcache/v3"
 	"github.com/lesismal/nbio/nbhttp/websocket"
 )
 
 type WsConnContext struct {
+	ConnUUID    string
 	Conn        *websocket.Conn
 	ID          string
 	ConnType    string
@@ -30,6 +32,7 @@ func (corectx *WsCoreCtx) InitConnCtx(_ctx context.Context, c *websocket.Conn, n
 	ctx, cancel := context.WithTimeout(_ctx, corectx.TTL)
 	connKey := connType + ":" + nodeID
 	connCtx := &WsConnContext{
+		ConnUUID:    uuid.NewString(),
 		Conn:        c,
 		ID:          nodeID,
 		ConnType:    connType,
@@ -43,7 +46,7 @@ func (corectx *WsCoreCtx) InitConnCtx(_ctx context.Context, c *websocket.Conn, n
 
 	c.SetSession(connCtx)
 
-	_, err, shared := corectx.ConnSf.Do(connKey, func() (any, error) {
+	savedUUID, err, _ := corectx.ConnSf.Do(connKey, func() (any, error) {
 		if item := corectx.WebsocketConnPool.Get(connKey); item != nil {
 			if existsConn := item.Value(); existsConn != nil && existsConn.Conn != nil {
 				existsConn.Store["disconnect_reason"] = "kick"
@@ -52,15 +55,20 @@ func (corectx *WsCoreCtx) InitConnCtx(_ctx context.Context, c *websocket.Conn, n
 		}
 		corectx.WebsocketConnPool.Set(connKey, connCtx, ttlcache.DefaultTTL)
 		go connCtx.Close()
-
 		slog.Debug("mtcws", c.RemoteAddr().String(), "connected")
-		return nil, corectx.OnConnected(connCtx)
+
+		if corectx.OnConnected != nil {
+			return connCtx.ConnUUID, corectx.OnConnected(connCtx)
+		}
+
+		return connCtx.ConnUUID, nil
+
 	})
 
 	if err != nil {
 		connCtx.Cancel()
 		return nil, err
-	} else if shared {
+	} else if savedUUID != connCtx.ConnUUID {
 		connCtx.Cancel()
 		return nil, errors.New("duplicate connection")
 	}
