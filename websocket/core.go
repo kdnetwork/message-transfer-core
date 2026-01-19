@@ -53,12 +53,13 @@ func (corectx *WsCoreCtx) Init() {
 
 	// conn pool
 	corectx.WebsocketConnPool.OnEviction(func(ctx context.Context, reason ttlcache.EvictionReason, i *ttlcache.Item[string, *WsConnContext]) {
-		if connCtx := i.Value(); connCtx.Conn != nil {
+		if connCtx := i.Value(); connCtx.Conn != nil && connCtx.Cancel != nil {
+			connCtx.SetStore("cancel_ctx_by", "ttlcache_eviction")
 			defer connCtx.Cancel()
 			if reason == ttlcache.EvictionReasonExpired {
-				connCtx.Store["disconnect_reason"] = "expired"
+				connCtx.SetStore("disconnect_reason", "expired")
 			} else {
-				connCtx.Store["disconnect_reason"] = "kick"
+				connCtx.SetStore("disconnect_reason", "kick")
 			}
 		}
 	})
@@ -86,17 +87,22 @@ func (corectx *WsCoreCtx) InitUpgrader() {
 	// corectx.WsUpgrader.BlockingModAsyncWrite = true
 
 	corectx.WsUpgrader.OnMessage(func(c *websocket.Conn, messageType websocket.MessageType, message []byte) {
-		if corectx.OnMessage == nil {
+		if messageType != websocket.TextMessage && messageType != websocket.BinaryMessage {
+			// not text or binary message
 			return
 		}
-		wsConnContext, ok := c.SessionWithLock().(*WsConnContext)
 
+		wsConnContext, ok := c.SessionWithLock().(*WsConnContext)
 		if !ok || wsConnContext == nil {
 			return
 		}
 
-		if slices.Contains([]string{WSPingMessageNum, WSPingMessageStr, ""}, string(message)) {
+		if slices.Contains([]string{WSPingMessageNum, WSPingMessageStr}, string(message)) {
 			// yes... return void
+			return
+		}
+
+		if corectx.OnMessage == nil {
 			return
 		}
 
@@ -105,9 +111,10 @@ func (corectx *WsCoreCtx) InitUpgrader() {
 		if err != nil {
 			slog.Error("mtcws", "error", err)
 		}
+
 		if len(response) > 0 {
 			// slog.Debug(response)
-			if wsConnContext.Protocol == "json" {
+			if messageType == websocket.TextMessage {
 				c.WriteMessage(websocket.TextMessage, response)
 			} else {
 				c.WriteMessage(websocket.BinaryMessage, response)
@@ -119,7 +126,7 @@ func (corectx *WsCoreCtx) InitUpgrader() {
 			slog.Error("mtcws", "error", err)
 		}
 		wsConnContext, ok := c.SessionWithLock().(*WsConnContext)
-		if !ok || wsConnContext == nil {
+		if !ok || wsConnContext == nil || wsConnContext.Cancel == nil {
 			return
 		}
 		wsConnContext.Cancel()

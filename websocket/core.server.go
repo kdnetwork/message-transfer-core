@@ -10,10 +10,14 @@ import (
 
 func (wsconn *WsCoreCtx) WebsocketServer(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
 	store, ok := ctx.Value("mtc-store").(map[string]string)
-	var nodeID, connType string
 	if !ok && !wsconn.Anonymous {
 		return errors.New("invalid store")
-	} else if ok && !wsconn.Anonymous {
+	} else if store == nil {
+		store = make(map[string]string)
+	}
+
+	var nodeID, connType string
+	if ok && !wsconn.Anonymous {
 		nodeID = store["node_id"]
 		connType = store["conn_type"]
 	} else {

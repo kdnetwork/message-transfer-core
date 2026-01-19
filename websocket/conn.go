@@ -26,11 +26,32 @@ type WsConnContext struct {
 	Ctx         context.Context
 	Cancel      context.CancelFunc
 	CloseAction sync.Once
+
+	mu sync.RWMutex
+}
+
+func (connctx *WsConnContext) SetStore(key, value string) {
+	connctx.mu.Lock()
+	defer connctx.mu.Unlock()
+	if connctx.Store == nil {
+		connctx.Store = make(map[string]string)
+	}
+	connctx.Store[key] = value
+}
+
+func (connctx *WsConnContext) GetStore(key string) (string, bool) {
+	connctx.mu.RLock()
+	defer connctx.mu.RUnlock()
+	val, ok := connctx.Store[key]
+	return val, ok
+}
+
+func (connctx *WsConnContext) ConnKey() string {
+	return connctx.ConnType + ":" + connctx.ID
 }
 
 func (corectx *WsCoreCtx) InitConnCtx(_ctx context.Context, c *websocket.Conn, nodeID, connType string, protocol string, store map[string]string) (*WsConnContext, error) {
 	ctx, cancel := context.WithTimeout(_ctx, corectx.TTL)
-	connKey := connType + ":" + nodeID
 	connCtx := &WsConnContext{
 		ConnUUID:    uuid.NewString(),
 		Conn:        c,
@@ -46,13 +67,11 @@ func (corectx *WsCoreCtx) InitConnCtx(_ctx context.Context, c *websocket.Conn, n
 
 	c.SetSession(connCtx)
 
+	connKey := connCtx.ConnKey()
+
 	savedUUID, err, _ := corectx.ConnSf.Do(connKey, func() (any, error) {
-		if item := corectx.WebsocketConnPool.Get(connKey); item != nil {
-			if existsConn := item.Value(); existsConn != nil && existsConn.Conn != nil {
-				existsConn.Store["disconnect_reason"] = "kick"
-				existsConn.Cancel()
-			}
-		}
+		corectx.WebsocketConnPool.Delete(connKey)
+
 		corectx.WebsocketConnPool.Set(connKey, connCtx, ttlcache.DefaultTTL)
 		go connCtx.Close()
 		slog.Debug("mtcws", c.RemoteAddr().String(), "connected")
@@ -69,6 +88,7 @@ func (corectx *WsCoreCtx) InitConnCtx(_ctx context.Context, c *websocket.Conn, n
 		connCtx.Cancel()
 		return nil, err
 	} else if savedUUID != connCtx.ConnUUID {
+		store["cancel_ctx_by"] = "duplicate_connection"
 		connCtx.Cancel()
 		return nil, errors.New("duplicate connection")
 	}
@@ -79,12 +99,19 @@ func (corectx *WsCoreCtx) InitConnCtx(_ctx context.Context, c *websocket.Conn, n
 func (wsconn *WsConnContext) Close() {
 	<-wsconn.Ctx.Done()
 	wsconn.CloseAction.Do(func() {
-		connID := wsconn.ConnType + ":" + wsconn.ID
+		connKey := wsconn.ConnKey()
 
-		defer slog.Info("mtcws", "id", connID, "ip", wsconn.Conn.RemoteAddr().String(), "status", "closed")
+		defer slog.Info("mtcws", "id", connKey, "ip", wsconn.Conn.RemoteAddr().String(), "status", "closed")
 
 		if wsconn.Ext.OnDisConnected != nil {
 			wsconn.Ext.OnDisConnected(wsconn)
+		}
+
+		if wsconn.Store != nil {
+			// when `cancel_ctx_by` exists, do not delete from pool
+			if by, exists := wsconn.Store["cancel_ctx_by"]; !exists || by == "" {
+				wsconn.Ext.WebsocketConnPool.Delete(connKey)
+			}
 		}
 
 		wsconn.Conn.Close()
