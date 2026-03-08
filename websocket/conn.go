@@ -2,18 +2,15 @@ package mtcws
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/jellydator/ttlcache/v3"
 	"github.com/lesismal/nbio/nbhttp/websocket"
 )
 
 type WsConnContext struct {
-	ConnUUID    string
 	Conn        *websocket.Conn
 	ID          string
 	ConnType    string
@@ -53,7 +50,6 @@ func (connctx *WsConnContext) ConnKey() string {
 func (corectx *WsCoreCtx) InitConnCtx(_ctx context.Context, c *websocket.Conn, nodeID, connType string, protocol string, store map[string]string) (*WsConnContext, error) {
 	ctx, cancel := context.WithTimeout(_ctx, corectx.TTL)
 	connCtx := &WsConnContext{
-		ConnUUID:    uuid.NewString(),
 		Conn:        c,
 		ID:          nodeID,
 		ConnType:    connType,
@@ -69,29 +65,16 @@ func (corectx *WsCoreCtx) InitConnCtx(_ctx context.Context, c *websocket.Conn, n
 
 	connKey := connCtx.ConnKey()
 
-	savedUUID, err, _ := corectx.ConnSf.Do(connKey, func() (any, error) {
-		corectx.WebsocketConnPool.Delete(connKey)
-
-		corectx.WebsocketConnPool.Set(connKey, connCtx, ttlcache.DefaultTTL)
-		go connCtx.Close()
-		slog.Debug("mtcws", c.RemoteAddr().String(), "connected")
-
-		if corectx.OnConnected != nil {
-			return connCtx.ConnUUID, corectx.OnConnected(connCtx)
+	corectx.WebsocketConnPool.Delete(connKey)
+	if corectx.OnConnected != nil {
+		if err := corectx.OnConnected(connCtx); err != nil {
+			connCtx.Cancel()
+			return nil, err
 		}
-
-		return connCtx.ConnUUID, nil
-
-	})
-
-	if err != nil {
-		connCtx.Cancel()
-		return nil, err
-	} else if savedUUID != connCtx.ConnUUID {
-		store["cancel_ctx_by"] = "duplicate_connection"
-		connCtx.Cancel()
-		return nil, errors.New("duplicate connection")
 	}
+	corectx.WebsocketConnPool.Set(connKey, connCtx, ttlcache.DefaultTTL)
+	go connCtx.Close()
+	slog.Debug("mtcws", c.RemoteAddr().String(), "connected")
 
 	return connCtx, nil
 }

@@ -33,16 +33,28 @@ func (wsconn *WsCoreCtx) WebsocketServer(ctx context.Context, w http.ResponseWri
 		return err
 	}
 
-	c, err := wsconn.WsUpgrader.Upgrade(w, r, nil)
-	if err != nil {
-		// slog.Error("upgrade:", err)
-		if c != nil {
-			return c.Close()
-		}
-		return err
-	}
+	connKey := connType + ":" + nodeID
 
-	_, err = wsconn.InitConnCtx(ctx, c, nodeID, connType, c.Subprotocol(), store)
+	connUUID := uuid.NewString()
+
+	savedUUID, err, _ := wsconn.ConnSf.Do(connKey, func() (any, error) {
+		c, err := wsconn.WsUpgrader.Upgrade(w, r, nil)
+		if err != nil {
+			// slog.Error("upgrade:", err)
+			if c != nil {
+				return connUUID, c.Close()
+			}
+			return connUUID, err
+		}
+
+		_, err = wsconn.InitConnCtx(ctx, c, nodeID, connType, c.Subprotocol(), store)
+
+		return connUUID, err
+	})
+
+	if savedUUID != connUUID {
+		return errors.New("duplicate connection")
+	}
 
 	return err
 }
