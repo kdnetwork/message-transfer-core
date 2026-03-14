@@ -35,6 +35,8 @@ type WsConnConfigExt struct {
 	ConnType string
 	NodeID   string
 	// ...
+
+	Store map[string]string
 }
 
 func (connctx *WsConnContext) SetStore(key, value string) {

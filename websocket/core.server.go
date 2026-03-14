@@ -7,51 +7,67 @@ import (
 	"github.com/google/uuid"
 )
 
-func (wsconn *WsCoreCtx) WebsocketServer(w http.ResponseWriter, r *http.Request, ext *WsConnConfigExt) error {
-	// <- ext maybe nil
-	if ext == nil && !wsconn.Anonymous {
-		return errors.New("invalid user")
-	}
+type WsServerSfResponse struct {
+	ConnUUID string
+	ConnCtx  *WsConnContext
+}
 
+func (wsconn *WsCoreCtx) WebsocketServer(w http.ResponseWriter, r *http.Request, ext *WsConnConfigExt) (*WsConnContext, error) {
+	// <- ext maybe nil
 	var nodeID, connType string
-	if wsconn.Anonymous {
+
+	var store = make(map[string]string)
+
+	if ext == nil {
+		if !wsconn.Anonymous {
+			return nil, errors.New("invalid user")
+		}
+
 		nodeID = uuid.NewString()
 		connType = "anonymous"
 	} else {
 		nodeID = ext.NodeID
 		connType = ext.ConnType
+		if ext.Store != nil {
+			store = ext.Store
+		}
 	}
 
 	if nodeID == "" || connType == "" {
-		return errors.New("invalid node-id or conn-type")
+		return nil, errors.New("invalid node-id or conn-type")
 	}
 
 	if err := wsconn.Ctx.Err(); err != nil {
-		return err
+		return nil, err
 	}
 
 	connKey := connType + ":" + nodeID
 
 	connUUID := uuid.NewString()
 
-	savedUUID, err, _ := wsconn.ConnSf.Do(connKey, func() (any, error) {
+	res, err, _ := wsconn.ConnSf.Do(connKey, func() (any, error) {
+		sfRes := &WsServerSfResponse{
+			ConnUUID: connUUID,
+		}
 		c, err := wsconn.WsUpgrader.Upgrade(w, r, nil)
 		if err != nil {
 			// slog.Error("upgrade:", err)
 			if c != nil {
 				return connUUID, c.Close()
 			}
-			return connUUID, err
+			return sfRes, err
 		}
 
-		_, err = wsconn.InitConnCtx(c, nodeID, connType, c.Subprotocol(), nil)
+		sfRes.ConnCtx, err = wsconn.InitConnCtx(c, nodeID, connType, c.Subprotocol(), store)
 
-		return connUUID, err
+		return sfRes, err
 	})
 
-	if savedUUID != connUUID {
-		return errors.New("duplicate connection")
+	response := res.(*WsServerSfResponse)
+
+	if response.ConnUUID != connUUID {
+		return nil, errors.New("duplicate connection")
 	}
 
-	return err
+	return response.ConnCtx, err
 }

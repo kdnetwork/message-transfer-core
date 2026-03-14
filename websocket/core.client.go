@@ -37,12 +37,17 @@ func (wsconn *WsCoreCtxClient) WebsocketClient(wsurl string, headers http.Header
 		DialTimeout: wsconn.ConnectTimeout,
 	}
 
+	var store = make(map[string]string)
+
 	if ext != nil {
 		if ext.Proxy != nil {
 			dialer.Proxy = http.ProxyURL(ext.Proxy)
 		}
 		if ext.Authorization != "" {
 			authorization = ext.Authorization
+		}
+		if ext.Store != nil {
+			store = ext.Store
 		}
 	}
 
@@ -58,5 +63,5 @@ func (wsconn *WsCoreCtxClient) WebsocketClient(wsurl string, headers http.Header
 		return nil, err
 	}
 
-	return wsconn.InitConnCtx(c, authorization, wsurl, protocol, nil)
+	return wsconn.InitConnCtx(c, authorization, wsurl, protocol, store)
 }
