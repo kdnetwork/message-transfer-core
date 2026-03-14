@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/jellydator/ttlcache/v3"
@@ -134,7 +135,7 @@ func (corectx *WsCoreCtx) InitUpgrader() {
 }
 
 func AutoResponseProtocol(protocol string) string {
-	if !slices.Contains(Protocols, protocol) {
+	if !slices.Contains(Protocols, strings.ToLower(protocol)) {
 		protocol = "json"
 	}
 	return protocol

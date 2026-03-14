@@ -3,6 +3,7 @@ package mtcws
 import (
 	"context"
 	"log/slog"
+	"net/url"
 	"sync"
 	"time"
 
@@ -27,6 +28,15 @@ type WsConnContext struct {
 	mu sync.RWMutex
 }
 
+type WsConnConfigExt struct {
+	Proxy         *url.URL
+	Authorization string
+
+	ConnType string
+	NodeID   string
+	// ...
+}
+
 func (connctx *WsConnContext) SetStore(key, value string) {
 	connctx.mu.Lock()
 	defer connctx.mu.Unlock()
@@ -47,8 +57,12 @@ func (connctx *WsConnContext) ConnKey() string {
 	return connctx.ConnType + ":" + connctx.ID
 }
 
-func (corectx *WsCoreCtx) InitConnCtx(_ctx context.Context, c *websocket.Conn, nodeID, connType string, protocol string, store map[string]string) (*WsConnContext, error) {
-	ctx, cancel := context.WithTimeout(_ctx, corectx.TTL)
+func (corectx *WsCoreCtx) InitConnCtx(c *websocket.Conn, nodeID, connType, protocol string, store map[string]string) (*WsConnContext, error) {
+	ctx, cancel := context.WithTimeout(corectx.Ctx, corectx.TTL)
+	if store == nil {
+		store = make(map[string]string)
+	}
+	ctx = context.WithValue(ctx, "mtc-store", store)
 	connCtx := &WsConnContext{
 		Conn:        c,
 		ID:          nodeID,

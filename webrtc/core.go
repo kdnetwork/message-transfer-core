@@ -137,15 +137,12 @@ func (corectx *RTCCoreCtx) InitEvents(connCtx *RTCConnContext) error {
 	return nil
 }
 
-func (corectx *RTCCoreCtx) InitWebRTC(_ctx context.Context, nodeID, connType, protocol string) *RTCConnContext {
-	ctx, cancel := context.WithCancel(_ctx)
-
-	var store map[string]string
-	var ok bool
-
-	if store, ok = ctx.Value("mtc-store").(map[string]string); !ok {
+func (corectx *RTCCoreCtx) InitWebRTC(nodeID, connType, protocol string, store map[string]string) *RTCConnContext {
+	ctx, cancel := context.WithCancel(corectx.Ctx) // <- timeout for ctx?
+	if store == nil {
 		store = make(map[string]string)
 	}
+	ctx = context.WithValue(ctx, "mtc-store", store)
 
 	connCtx := &RTCConnContext{
 		ID:       nodeID,

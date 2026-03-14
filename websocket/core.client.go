@@ -1,10 +1,7 @@
 package mtcws
 
 import (
-	"context"
 	"net/http"
-	"net/url"
-	"strings"
 
 	"github.com/google/uuid"
 	"github.com/lesismal/nbio/nbhttp"
@@ -12,11 +9,12 @@ import (
 )
 
 type WsCoreCtxClient struct {
-	WsCoreCtx
+	*WsCoreCtx
 	Engine *nbhttp.Engine
 }
 
 func (wsconn *WsCoreCtxClient) Init() {
+	wsconn.WsCoreCtx.Anonymous = true // <- must be true in client mode
 	wsconn.WsCoreCtx.Init()
 
 	wsconn.Engine = nbhttp.NewEngine(nbhttp.Config{})
@@ -29,13 +27,9 @@ func (wsconn *WsCoreCtxClient) Stop() error {
 	return nil
 }
 
-func (wsconn *WsCoreCtxClient) WebsocketClient(ctx context.Context, _url string, headers http.Header) (*WsConnContext, error) {
-	protocol := AutoResponseProtocol(headers.Get("Sec-WebSocket-Protocol"))
-	authorization := strings.ReplaceAll(headers.Get("Authorization"), "Bearer ", "")
-
-	if authorization == "" {
-		authorization = uuid.NewString()
-	}
+func (wsconn *WsCoreCtxClient) WebsocketClient(wsurl string, headers http.Header, ext *WsConnConfigExt) (*WsConnContext, error) {
+	protocol := headers.Get("Sec-WebSocket-Protocol")
+	var authorization string
 
 	dialer := websocket.Dialer{
 		Engine:      wsconn.Engine,
@@ -43,16 +37,20 @@ func (wsconn *WsCoreCtxClient) WebsocketClient(ctx context.Context, _url string,
 		DialTimeout: wsconn.ConnectTimeout,
 	}
 
-	store, ok := ctx.Value("mtc-store").(map[string]string)
-	if ok {
-		if proxy := store["proxy"]; proxy != "" {
-			if proxyURL, err := url.Parse(proxy); err == nil {
-				dialer.Proxy = http.ProxyURL(proxyURL)
-			}
+	if ext != nil {
+		if ext.Proxy != nil {
+			dialer.Proxy = http.ProxyURL(ext.Proxy)
+		}
+		if ext.Authorization != "" {
+			authorization = ext.Authorization
 		}
 	}
 
-	c, _, err := dialer.Dial(_url, headers)
+	if authorization == "" {
+		authorization = uuid.NewString()
+	}
+
+	c, _, err := dialer.Dial(wsurl, headers)
 	if err != nil {
 		if c != nil {
 			return nil, c.Close()
@@ -60,5 +58,5 @@ func (wsconn *WsCoreCtxClient) WebsocketClient(ctx context.Context, _url string,
 		return nil, err
 	}
 
-	return wsconn.InitConnCtx(ctx, c, authorization, "client", protocol, store)
+	return wsconn.InitConnCtx(c, authorization, wsurl, protocol, nil)
 }

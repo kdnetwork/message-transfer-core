@@ -1,9 +1,5 @@
 package mtcrtc
 
-import (
-	"context"
-)
-
 type RTCCoreCtxServer struct {
 	RTCCoreCtx
 }
@@ -13,13 +9,13 @@ func (corectx *RTCCoreCtxServer) Init() {
 	corectx.RTCCoreCtx.Init()
 }
 
-func (corectx *RTCCoreCtxServer) InitServerConn(ctx context.Context, nodeID, connType, protocol string) (*RTCConnContext, *RTCSignal) {
+func (corectx *RTCCoreCtxServer) InitServerConn(nodeID, connType, protocol string, store map[string]string) (*RTCConnContext, *RTCSignal) {
 	responseSignal := &RTCSignal{
 		ID:   connType + ":" + nodeID,
 		Type: "ack",
 	}
 
-	conn := corectx.InitWebRTC(ctx, nodeID, connType, protocol)
+	conn := corectx.InitWebRTC(nodeID, connType, protocol, store)
 	if conn != nil {
 		r, err := conn.CreateOffer()
 		if err != nil {

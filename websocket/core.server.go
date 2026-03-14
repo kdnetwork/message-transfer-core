@@ -1,28 +1,25 @@
 package mtcws
 
 import (
-	"context"
 	"errors"
 	"net/http"
 
 	"github.com/google/uuid"
 )
 
-func (wsconn *WsCoreCtx) WebsocketServer(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
-	store, ok := ctx.Value("mtc-store").(map[string]string)
-	if !ok && !wsconn.Anonymous {
-		return errors.New("invalid store")
-	} else if store == nil {
-		store = make(map[string]string)
+func (wsconn *WsCoreCtx) WebsocketServer(w http.ResponseWriter, r *http.Request, ext *WsConnConfigExt) error {
+	// <- ext maybe nil
+	if ext == nil && !wsconn.Anonymous {
+		return errors.New("invalid user")
 	}
 
 	var nodeID, connType string
-	if ok && !wsconn.Anonymous {
-		nodeID = store["node_id"]
-		connType = store["conn_type"]
-	} else {
+	if wsconn.Anonymous {
 		nodeID = uuid.NewString()
 		connType = "anonymous"
+	} else {
+		nodeID = ext.NodeID
+		connType = ext.ConnType
 	}
 
 	if nodeID == "" || connType == "" {
@@ -47,7 +44,7 @@ func (wsconn *WsCoreCtx) WebsocketServer(ctx context.Context, w http.ResponseWri
 			return connUUID, err
 		}
 
-		_, err = wsconn.InitConnCtx(ctx, c, nodeID, connType, c.Subprotocol(), store)
+		_, err = wsconn.InitConnCtx(c, nodeID, connType, c.Subprotocol(), nil)
 
 		return connUUID, err
 	})
