@@ -1,1 +1,4 @@
 .idea/
+.junie/
+examples/
+**/todo.md
