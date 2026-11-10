@@ -29,8 +29,7 @@ type WsConnContext struct {
 }
 
 type WsConnConfigExt struct {
-	Proxy         *url.URL
-	Authorization string
+	Proxy *url.URL
 
 	ConnType string
 	NodeID   string
@@ -56,7 +55,7 @@ func (connctx *WsConnContext) GetStore(key string) (string, bool) {
 }
 
 func (connctx *WsConnContext) ConnKey() string {
-	return connctx.ConnType + ":" + connctx.ID
+	return connctx.ID
 }
 
 func (corectx *WsCoreCtx) InitConnCtx(c *websocket.Conn, nodeID, connType, protocol string, store map[string]string) (*WsConnContext, error) {

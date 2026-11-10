@@ -34,25 +34,21 @@ type WsCoreCtx struct {
 	ConnSf singleflight.Group
 }
 
-func (corectx *WsCoreCtx) Init() {
+func (corectx *WsCoreCtx) Init(ctx context.Context) {
 	InitNbioLogger()
-	corectx.Ctx, corectx.Cancel = context.WithCancel(context.Background())
+	corectx.Ctx, corectx.Cancel = context.WithCancel(ctx)
 
 	if corectx.TTL == 0 {
 		corectx.TTL = time.Hour * 24
 	}
 
-	// if corectx.ConnectTimeout == 0 {
-	// 	corectx.ConnectTimeout = time.Second * 10
-	// }
-
+	// conn pool
 	corectx.WebsocketConnPool = ttlcache.New(
 		ttlcache.WithCapacity[string, *WsConnContext](corectx.ConnSize), // ?
 		ttlcache.WithTTL[string, *WsConnContext](corectx.TTL),
 		ttlcache.WithDisableTouchOnHit[string, *WsConnContext](),
 	)
 
-	// conn pool
 	corectx.WebsocketConnPool.OnEviction(func(ctx context.Context, reason ttlcache.EvictionReason, i *ttlcache.Item[string, *WsConnContext]) {
 		if connCtx := i.Value(); connCtx.Conn != nil && connCtx.Cancel != nil {
 			connCtx.SetStore("cancel_ctx_by", "ttlcache_eviction")

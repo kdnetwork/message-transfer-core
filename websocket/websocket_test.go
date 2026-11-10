@@ -1,7 +1,9 @@
 // websocket/websocket_test.go
+// https://github.com/orgs/kdnetwork/projects/1/views/1?pane=issue&itemId=165082690
 package mtcws
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -55,7 +57,7 @@ func setupTestServer(t *testing.T, coreCtx *WsCoreCtx) (*WsCoreCtx, *httptest.Se
 		}
 	}
 
-	server.Init()
+	server.Init(context.Background())
 	server.InitUpgrader()
 
 	httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -73,9 +75,8 @@ func setupTestServer(t *testing.T, coreCtx *WsCoreCtx) (*WsCoreCtx, *httptest.Se
 		}
 
 		_, err := server.WebsocketServer(w, r, &WsConnConfigExt{
-			Authorization: r.Header.Get("Authorization"), //<- test format: "user":<number-id>
-			ConnType:      parts[0],
-			NodeID:        parts[1],
+			ConnType: parts[0],
+			NodeID:   parts[1],
 		})
 		if err != nil {
 			t.Logf("server error: %v", err)
@@ -135,7 +136,7 @@ func setupTestClient(t *testing.T, coreCtx *WsCoreCtx) (*WsCoreCtxClient, func()
 	client := &WsCoreCtxClient{
 		WsCoreCtx: coreCtx,
 	}
-	client.Init()
+	client.Init(context.Background())
 	client.InitUpgrader()
 
 	cleanup := func() {
