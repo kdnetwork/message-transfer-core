@@ -41,7 +41,7 @@ func (wsconn *WsCoreCtx) WebsocketServer(w http.ResponseWriter, r *http.Request,
 		return nil, err
 	}
 
-	connKey := connType + ":" + nodeID
+	connKey := nodeID
 
 	connUUID := uuid.NewString()
 
